@@ -3,6 +3,7 @@ import { Upload, Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { ClothingItem } from '../types';
 import toast from 'react-hot-toast';
+import { Session } from '@supabase/supabase-js';
 
 export default function Wardrobe() {
   const [items, setItems] = useState<ClothingItem[]>([]);
@@ -11,7 +12,7 @@ export default function Wardrobe() {
     color: '',
     style: ''
   });
-  const [session, setSession] = useState(null);
+  const [session, setSession] = useState<Session |null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -127,6 +128,7 @@ export default function Wardrobe() {
       .from('clothing_items')
       .insert([{
         name: file.name,
+        user_id: session.user.id,
         image_url: imageUrl,
         category: 'uncategorized',
         color: '',
