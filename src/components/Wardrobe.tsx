@@ -3,19 +3,21 @@ import { Upload, Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { ClothingItem } from '../types';
 import toast from 'react-hot-toast';
-import { Session } from '@supabase/supabase-js';
+import UploadModal from './UploadModal';
 
 export default function Wardrobe() {
   const [items, setItems] = useState<ClothingItem[]>([]);
   const [filters, setFilters] = useState({
     category: '',
-    color: '',
     style: ''
   });
-  const [session, setSession] = useState<Session |null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [session, setSession] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string>('');
   
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -36,6 +38,17 @@ export default function Wardrobe() {
       loadWardrobe();
     }
   }, [session]);
+
+  const filteredItems = items.filter(item => {
+    const matchesSearch = searchQuery === '' || 
+      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.tags?.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
+    
+    const matchesCategory = filters.category === '' || item.category === filters.category;
+    const matchesStyle = filters.style === '' || item.style === filters.style;
+
+    return matchesSearch && matchesCategory && matchesStyle;
+  });
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
@@ -111,29 +124,34 @@ export default function Wardrobe() {
     return publicUrl;
   }
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    if (!session) {
-      toast.error('Please sign in to upload images');
-      return;
-    }
-
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     if (!e.target.files || e.target.files.length === 0) return;
     
     const file = e.target.files[0];
-    const imageUrl = await uploadImage(file);
-    
+    setUploadFile(file);
+    setUploadPreviewUrl(URL.createObjectURL(file));
+  }
+
+  async function handleUploadSubmit(data: {
+    name: string;
+    category: string;
+    style: string;
+    tags: string[];
+  }) {
+    if (!uploadFile) return;
+
+    const imageUrl = await uploadImage(uploadFile);
     if (!imageUrl) return;
 
     const { error } = await supabase
       .from('clothing_items')
       .insert([{
-        name: file.name,
         user_id: session.user.id,
+        name: data.name,
         image_url: imageUrl,
-        category: 'uncategorized',
-        color: '',
-        style: '',
-        tags: []
+        category: data.category,
+        style: data.style,
+        tags: data.tags
       }]);
 
     if (error) {
@@ -143,6 +161,12 @@ export default function Wardrobe() {
 
     toast.success('Item added successfully');
     loadWardrobe();
+    handleUploadCancel();
+  }
+
+  function handleUploadCancel() {
+    setUploadFile(null);
+    setUploadPreviewUrl('');
   }
 
   if (!session) {
@@ -205,7 +229,7 @@ export default function Wardrobe() {
         <label className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700 text-sm sm:text-base">
           <Upload size={18} className="sm:size-20" />
           Add Item
-          <input type="file" className="hidden" onChange={handleUpload} accept="image/*" />
+          <input type="file" className="hidden" onChange={handleFileSelect} accept="image/*" />
         </label>
       </div>
 
@@ -216,6 +240,8 @@ export default function Wardrobe() {
             <input
               type="text"
               placeholder="Search items..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm sm:text-base"
             />
           </div>
@@ -224,7 +250,7 @@ export default function Wardrobe() {
           <select
             className="px-3 py-2 sm:px-4 border rounded-lg text-sm sm:text-base min-w-[120px] sm:min-w-[140px]"
             value={filters.category}
-            onChange={(e) => setFilters({ ...filters, category: e.target.value })}
+            onChange={(e) => setFilters(prev => ({ ...prev, category: e.target.value }))}
           >
             <option value="">All Categories</option>
             <option value="tops">Tops</option>
@@ -237,7 +263,7 @@ export default function Wardrobe() {
           <select
             className="px-3 py-2 sm:px-4 border rounded-lg text-sm sm:text-base min-w-[120px] sm:min-w-[140px]"
             value={filters.style}
-            onChange={(e) => setFilters({ ...filters, style: e.target.value })}
+            onChange={(e) => setFilters(prev => ({ ...prev, style: e.target.value }))}
           >
             <option value="">All Styles</option>
             <option value="casual">Casual</option>
@@ -249,7 +275,7 @@ export default function Wardrobe() {
       </div>
 
       <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
-        {items.map((item) => (
+        {filteredItems.map((item) => (
           <div key={item.id} className="bg-white rounded-lg shadow-md overflow-hidden">
             <div className="aspect-square">
               <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
@@ -267,6 +293,15 @@ export default function Wardrobe() {
           </div>
         ))}
       </div>
+
+      {uploadFile && uploadPreviewUrl && (
+        <UploadModal
+          file={uploadFile}
+          imagePreviewUrl={uploadPreviewUrl}
+          onSubmit={handleUploadSubmit}
+          onCancel={handleUploadCancel}
+        />
+      )}
     </div>
   );
 }
